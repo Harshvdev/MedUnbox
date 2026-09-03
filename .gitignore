@@ -54,3 +54,6 @@ server.log
 
 # misc
 /misc
+
+# GUI test evidence
+/gui-test-screenshots/
