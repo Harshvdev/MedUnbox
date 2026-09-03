@@ -30,7 +30,7 @@ import { toast } from "sonner"
 const schema = z.object({
   note: z.string().min(1, "Note is required").max(5000),
   category: z.enum(["general", "follow_up", "referral", "alert"]),
-  isPinned: z.boolean().default(false),
+  isPinned: z.boolean(),
 })
 
 type FormValues = z.infer<typeof schema>

@@ -412,7 +412,7 @@ model TrendPoint {
 model Trend {
   id            String   @id @default(cuid())
   patientId     String
-  entity        String   @unique
+  entity        String   // HEMOGLOBIN, HBA1C, etc.
   label         String
   direction     TrendDirection
   unit          String?
@@ -424,6 +424,7 @@ model Trend {
   lastUpdated   DateTime @default(now())
   createdAt     DateTime @default(now())
 
+  @@unique([patientId, entity])
   @@index([patientId])
 }
 

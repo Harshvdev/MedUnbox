@@ -330,7 +330,7 @@ function extractNumeric(value: string): number | null {
 }
 
 function getVitalReferenceRange(entity: string): string | null {
-  const ranges: Record<string, string> = {
+  const ranges: Record<string, string | null> = {
     BLOOD_PRESSURE: "120/80",
     HEART_RATE: "60-100",
     WEIGHT: null,

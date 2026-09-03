@@ -40,6 +40,7 @@ import {
   formatDate,
   timeAgo,
 } from "@/lib/constants"
+import { doctorDisplayName } from "@/lib/utils"
 
 interface CareTeamDoctor {
   id: string
@@ -234,7 +235,7 @@ export function CareTeam({ initialShares }: { initialShares: CareTeamShare[] }) 
             <AlertDialogTitle>Revoke this access?</AlertDialogTitle>
             <AlertDialogDescription>
               {revokeTarget?.doctor
-                ? `Dr. ${revokeTarget.doctor.name ?? revokeTarget.doctor.email ?? "the doctor"} will immediately lose access to your records. They will be moved to the "Revoked" section below. This cannot be undone.`
+                ? `${revokeTarget.doctor.name ? doctorDisplayName(revokeTarget.doctor.name) : revokeTarget.doctor.email ?? "the doctor"} will immediately lose access to your records. They will be moved to the "Revoked" section below. This cannot be undone.`
                 : "The doctor will immediately lose access to your records. This cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -354,7 +355,7 @@ function DoctorCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <p className="truncate font-medium leading-tight">
-                {doctor?.name ? `Dr. ${doctor.name}` : "Unknown doctor"}
+                {doctorDisplayName(doctor?.name)}
               </p>
               <StatusBadge status={status} />
             </div>

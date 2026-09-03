@@ -17,7 +17,12 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const language = req.nextUrl.searchParams.get("lang") || user.locale || "en"
+    // Locale lives on the User record, not in the session
+    const dbUser = await db.user.findUnique({
+      where: { id: user.id },
+      select: { locale: true },
+    })
+    const language = req.nextUrl.searchParams.get("lang") || dbUser?.locale || "en"
     const refresh = req.nextUrl.searchParams.get("refresh") === "true"
 
     // Gather all patient data for the summary

@@ -39,6 +39,7 @@ import {
   formatDateTime,
   timeAgo,
 } from "@/lib/constants"
+import { doctorDisplayName } from "@/lib/utils"
 
 interface ShareDoctor {
   id: string
@@ -243,7 +244,7 @@ export function SharingList({ initialShares }: { initialShares: ShareItem[] }) {
             <AlertDialogTitle>Revoke this share?</AlertDialogTitle>
             <AlertDialogDescription>
               {revokeTarget?.doctor
-                ? `Dr. ${revokeTarget.doctor.name ?? revokeTarget.doctor.email ?? "the doctor"} will immediately lose access to your records. This cannot be undone.`
+                ? `${revokeTarget.doctor.name ? doctorDisplayName(revokeTarget.doctor.name) : revokeTarget.doctor.email ?? "the doctor"} will immediately lose access to your records. This cannot be undone.`
                 : "The doctor will immediately lose access to your records. This cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -303,7 +304,7 @@ function ShareCard({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate font-medium">
-                  {doctor?.name ? `Dr. ${doctor.name}` : "Unknown doctor"}
+                  {doctorDisplayName(doctor?.name)}
                 </p>
                 <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {doctor?.email && (

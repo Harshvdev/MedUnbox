@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 interface Series {
   entity: string
   label: string
-  color: string
+  color?: string
   data: Array<{ date: string; value: number; raw: string }>
 }
 

@@ -40,7 +40,8 @@ export async function uploadDocumentToImageKit(
   fileBuffer: Buffer,
   fileName: string,
   folder: string,
-  mimeType: string
+  mimeType: string,
+  opts: { uniqueFileName?: boolean } = {}
 ): Promise<{
   fileId: string
   url: string
@@ -54,7 +55,8 @@ export async function uploadDocumentToImageKit(
     fileName,
     folder: `/medunbox-documents/${folder}`,
     isPrivateFile: true,
-    useUniqueFileName: true,
+    useUniqueFileName: opts.uniqueFileName ?? true,
+    overwriteFile: opts.uniqueFileName === false ? true : undefined,
     tags: ['medunbox', 'medical-record'],
     responseFields: ['isPrivateFile', 'tags', 'customCoordinates', 'height', 'width'],
   })

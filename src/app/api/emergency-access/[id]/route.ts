@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentPatient } from "@/lib/session"
 import { db } from "@/lib/db"
+import type { Prisma } from "@prisma/client"
 import { z } from "zod"
 
 const patchSchema = z.object({
@@ -69,7 +70,7 @@ export async function PATCH(
           action: "EMERGENCY_ACCESS_UPDATED",
           resource: "EmergencyAccess",
           resourceId: updated.id,
-          metadata: update,
+          metadata: update as Prisma.InputJsonValue,
         },
       })
     } catch (e) {

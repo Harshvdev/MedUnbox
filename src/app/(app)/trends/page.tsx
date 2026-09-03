@@ -140,7 +140,6 @@ export default async function TrendsPage() {
     .map((t) => ({
       entity: t.entity,
       label: t.label,
-      color: undefined as string | undefined,
       data: (pointsByEntity[t.entity] ?? []).map((p) => ({
         date: new Date(p.recordedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
         value: p.valueNum,

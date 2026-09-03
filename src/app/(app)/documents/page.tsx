@@ -78,7 +78,7 @@ export default function DocumentsPage() {
 
   const { data, isLoading } = useQuery<{ documents: DocItem[] }>({
     queryKey: ["documents"],
-    queryFn: () => fetch("/api/documents/upload").then((r) => r.json()),
+    queryFn: () => fetch("/api/documents").then((r) => r.json()),
   })
 
   const reprocess = useMutation({
@@ -186,7 +186,7 @@ export default function DocumentsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Documents</h1>
           <p className="text-muted-foreground">
-            {data?.documents.length ?? 0} document{(data?.documents.length ?? 0) === 1 ? "" : "s"} in your vault
+            {data?.documents?.length ?? 0} document{(data?.documents?.length ?? 0) === 1 ? "" : "s"} in your vault
           </p>
         </div>
         <div className="flex items-center gap-2">

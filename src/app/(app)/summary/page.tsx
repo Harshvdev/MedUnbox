@@ -26,6 +26,7 @@ const SUPPORTED_LANGUAGES = [
 interface SummaryResponse {
   summary: string | null
   message?: string
+  error?: string
   language: string
   generatedAt?: string
   stats?: {
@@ -46,14 +47,16 @@ export default function SummaryPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  async function fetchSummary(lang: string, refresh = false) {
+  async function fetchSummary(lang: string, refresh = false): Promise<SummaryResponse | null> {
     setLoading(true)
     try {
       const res = await fetch(`/api/summary?lang=${lang}${refresh ? "&refresh=true" : ""}`)
-      const d = await res.json()
+      const d = (await res.json()) as SummaryResponse
       setData(d)
+      return d
     } catch {
       toast.error("Failed to generate summary")
+      return null
     } finally {
       setLoading(false)
     }
@@ -65,9 +68,10 @@ export default function SummaryPage() {
 
   async function handleRefresh() {
     setRefreshing(true)
-    await fetchSummary(language, true)
+    const d = await fetchSummary(language, true)
     setRefreshing(false)
-    toast.success("Summary refreshed")
+    if (d?.error) toast.error(d.error)
+    else if (d) toast.success("Summary refreshed")
   }
 
   return (
@@ -125,9 +129,11 @@ export default function SummaryPage() {
               <div>
                 <CardTitle className="text-base">Your Personalized Summary</CardTitle>
                 <CardDescription className="text-xs">
-                  {data?.generatedAt
+                  {loading
+                    ? "Generating..."
+                    : data?.generatedAt
                     ? `Generated just now in ${SUPPORTED_LANGUAGES.find((l) => l.code === language)?.label}`
-                    : "Generating..."}
+                    : "Not generated yet"}
                 </CardDescription>
               </div>
             </div>
@@ -163,6 +169,17 @@ export default function SummaryPage() {
                   <div className="h-3 w-full rounded bg-muted" />
                   <div className="h-3 w-8/12 rounded bg-muted" />
                 </div>
+              </div>
+            </div>
+          ) : data?.error ? (
+            <div className="flex items-start gap-3 py-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-destructive">Couldn't generate your summary</p>
+                <p className="text-sm text-muted-foreground">{data.error}</p>
+                <p className="text-xs text-muted-foreground/70">
+                  Check your connection and try the Refresh button above.
+                </p>
               </div>
             </div>
           ) : !data?.summary ? (
