@@ -1,0 +1,718 @@
+// MedUnbox - Patient-controlled longitudinal medical-record platform
+// Database: Neon PostgreSQL + pgvector
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector, pgcrypto]
+}
+
+// ============================================================
+// USERS & AUTH
+// ============================================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  emailVerified DateTime?
+  passwordHash  String?
+  name          String?
+  image         String?
+  role          Role     @default(PATIENT)
+  locale        String   @default("en")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  patient       Patient?
+  doctor        Doctor?
+  aiQueries     AiQuery[]
+  auditLogs     AuditLog[]
+
+  @@index([role])
+}
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================================
+// PATIENT & DOCTOR PROFILES
+// ============================================================
+
+model Patient {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  dateOfBirth     DateTime?
+  gender          String?
+  bloodGroup      String?
+  phone           String?
+  address         String?
+  emergencyContact String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents       Document[]
+  timelineEvents  TimelineEvent[]
+  medications     Medication[]
+  diagnoses       Diagnosis[]
+  shares          Share[]
+  conflictsReported Conflict[]
+  clinicalNotes   ClinicalNote[]
+  healthSummaries HealthSummary[]
+  healthGoals     HealthGoal[]
+  emergencyAccess EmergencyAccess[]
+}
+
+model Doctor {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  registrationNo  String?
+  specialization  String?
+  hospital        String?
+  phone           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shares          Share[]
+  clinicalNotes   ClinicalNote[]
+}
+
+// ============================================================
+// DOCUMENTS & PAGES
+// ============================================================
+
+model Document {
+  id              String         @id @default(cuid())
+  patientId       String
+  title           String
+  category        DocumentCategory
+  mimeType        String
+  fileSize        Int
+  fileHash        String         // SHA-256 for duplicate detection
+  pageCount       Int            @default(1)
+  // ImageKit private storage reference (never public URL)
+  imagekitFileId  String
+  imagekitUrl     String         // private/authenticated URL
+  thumbnailUrl    String?
+  status          DocumentStatus @default(UPLOADED)
+  language        String         @default("en")
+  processingError String?
+  uploadedAt      DateTime       @default(now())
+  processedAt     DateTime?
+
+  patient         Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  pages           DocumentPage[]
+  extractedText   ExtractedText[]
+  medicalEntities MedicalEntity[]
+  medicalValues   MedicalValue[]
+  duplicates       DocumentDuplicate[]  @relation("docDuplicates")
+  duplicateOf      DocumentDuplicate[]  @relation("docOriginal")
+  conflicts        Conflict[]     @relation("conflictA")
+  conflictsAsB    Conflict[]     @relation("conflictB")
+  timelineEvents  TimelineEvent[]
+  evidenceItems   Evidence[]
+
+  @@index([patientId])
+  @@index([fileHash])
+  @@index([category])
+  @@index([status])
+}
+
+enum DocumentCategory {
+  LAB_REPORT
+  PRESCRIPTION
+  IMAGING
+  DISCHARGE_SUMMARY
+  PATHOLOGY
+  RADIOLOGY
+  CARDIOLOGY
+  OPD_CONSULTATION
+  VACCINATION
+  INSURANCE
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  PROCESSING
+  PROCESSED
+  FAILED
+  DUPLICATE
+}
+
+model DocumentPage {
+  id              String   @id @default(cuid())
+  documentId      String
+  pageNumber      Int
+  imagekitFileId  String?  // per-page image if split
+  imageUrl        String?
+  width           Int?
+  height          Int?
+  createdAt       DateTime @default(now())
+
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  extractedText   ExtractedText?
+  medicalEntities MedicalEntity[]
+
+  @@unique([documentId, pageNumber])
+  @@index([documentId])
+}
+
+// ============================================================
+// EXTRACTED TEXT & MEDICAL ENTITIES (with provenance)
+// ============================================================
+
+model ExtractedText {
+  id          String   @id @default(cuid())
+  documentId  String
+  pageId      String   @unique
+  pageNumber  Int
+  rawText     String   @db.Text
+  cleanedText String   @db.Text
+  confidence  Float    @default(0.0)
+  language    String   @default("en")
+  createdAt   DateTime @default(now())
+
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  page        DocumentPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  embedding   TextEmbedding?
+
+  @@index([documentId])
+}
+
+model TextEmbedding {
+  id        String   @id @default(cuid())
+  textId    String   @unique
+  // BGE multilingual embedding (768 dims) stored as pgvector
+  vector    Unsupported("vector(768)")
+  model     String   @default("bge-multilingual")
+  createdAt DateTime @default(now())
+
+  text      ExtractedText @relation(fields: [textId], references: [id], onDelete: Cascade)
+}
+
+model MedicalEntity {
+  id            String   @id @default(cuid())
+  documentId    String
+  pageId        String?
+  pageNumber    Int
+  entity        String   // normalized entity type (e.g. HEMOGLOBIN, CREATININE)
+  entityLabel   String   // human label
+  category      String   // LAB_VALUE, MEDICATION, DIAGNOSIS, PROCEDURE, VITAL
+  rawText       String   // exact text span extracted
+  normalizedValue String?
+  confidence    Float    @default(0.0)
+  bboxX         Float?
+  bboxY         Float?
+  bboxW         Float?
+  bboxH         Float?
+  createdAt     DateTime @default(now())
+
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  page          DocumentPage? @relation(fields: [pageId], references: [id], onDelete: SetNull)
+
+  @@index([documentId])
+  @@index([entity])
+  @@index([category])
+}
+
+model MedicalValue {
+  id              String   @id @default(cuid())
+  documentId      String
+  patientId       String
+  entity          String   // normalized key (HEMOGLOBIN, HBA1C, CREATININE...)
+  label           String   // display label
+  value           String   // numeric or text value
+  numericValue    Float?
+  unit            String?
+  referenceRange   String?
+  status          ValueStatus @default(NORMAL)
+  recordedAt      DateTime?  // date on the report
+  pageNumber      Int
+  sourceText      String   @db.Text // provenance text
+  createdAt       DateTime @default(now())
+
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  trendItems      TrendPoint[]
+
+  @@index([patientId])
+  @@index([entity])
+  @@index([recordedAt])
+}
+
+enum ValueStatus {
+  NORMAL
+  ABNORMAL_LOW
+  ABNORMAL_HIGH
+  CRITICAL
+  UNKNOWN
+}
+
+// ============================================================
+// MEDICATIONS & DIAGNOSES
+// ============================================================
+
+model Medication {
+  id          String   @id @default(cuid())
+  patientId   String
+  name        String
+  dosage      String?
+  frequency   String?
+  route       String?
+  startDate   DateTime?
+  endDate     DateTime?
+  status      MedicationStatus @default(ACTIVE)
+  sourceDocId String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([name])
+}
+
+enum MedicationStatus {
+  ACTIVE
+  DISCONTINUED
+  COMPLETED
+}
+
+model Diagnosis {
+  id          String   @id @default(cuid())
+  patientId   String
+  name        String
+  icdCode     String?
+  severity    String?
+  status      DiagnosisStatus @default(ACTIVE)
+  diagnosedAt DateTime?
+  sourceDocId String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([name])
+}
+
+enum DiagnosisStatus {
+  ACTIVE
+  RESOLVED
+  CHRONIC
+  RECURRENT
+}
+
+// ============================================================
+// LONGITUDINAL TIMELINE & TRENDS
+// ============================================================
+
+model TimelineEvent {
+  id          String   @id @default(cuid())
+  patientId   String
+  date        DateTime
+  title       String
+  description String   @db.Text
+  category    TimelineCategory
+  severity    String?
+  sourceDocId String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  document    Document? @relation(fields: [sourceDocId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, date])
+  @@index([category])
+}
+
+enum TimelineCategory {
+  LAB_TEST
+  DIAGNOSIS
+  MEDICATION_START
+  MEDICATION_STOP
+  PROCEDURE
+  HOSPITALIZATION
+  VACCINATION
+  VISIT
+  IMAGING
+  SURGERY
+  ALLERGY
+  OTHER
+}
+
+model TrendPoint {
+  id          String   @id @default(cuid())
+  patientId   String
+  entity      String   // HEMOGLOBIN, HBA1C, etc.
+  label       String
+  valueId     String
+  valueNum    Float
+  unit        String?
+  recordedAt  DateTime
+  createdAt   DateTime @default(now())
+
+  medicalValue MedicalValue @relation(fields: [valueId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, entity, recordedAt])
+}
+
+model Trend {
+  id            String   @id @default(cuid())
+  patientId     String
+  entity        String   @unique
+  label         String
+  direction     TrendDirection
+  unit          String?
+  latestValue   Float
+  previousValue Float?
+  changePercent Float?
+  status        TrendStatus
+  dataPoints    Int
+  lastUpdated   DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([patientId])
+}
+
+enum TrendDirection {
+  IMPROVING
+  WORSENING
+  STABLE
+  FLUCTUATING
+}
+
+enum TrendStatus {
+  NORMAL
+  NEWLY_ABNORMAL
+  ABNORMAL
+  CRITICAL
+}
+
+// ============================================================
+// DUPLICATE & CONFLICT DETECTION
+// ============================================================
+
+model DocumentDuplicate {
+  id           String   @id @default(cuid())
+  documentId   String
+  originalDocId String
+  similarity   Float
+  matchType    String   // HASH, CONTENT, VISUAL
+  status       DuplicateStatus @default(PENDING)
+  resolvedAt   DateTime?
+  createdAt    DateTime @default(now())
+
+  document     Document @relation("docDuplicates", fields: [documentId], references: [id], onDelete: Cascade)
+  original     Document @relation("docOriginal", fields: [originalDocId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, originalDocId])
+}
+
+enum DuplicateStatus {
+  PENDING
+  KEEP_BOTH
+  MERGED
+  DISMISSED
+}
+
+model Conflict {
+  id          String   @id @default(cuid())
+  patientId   String
+  entity      String   // e.g. BLOOD_GROUP, HEMOGLOBIN
+  label       String
+  documentAId String
+  documentBId String
+  valueA      String
+  valueB      String
+  pageA       Int
+  pageB       Int
+  sourceTextA String  @db.Text
+  sourceTextB String  @db.Text
+  status      ConflictStatus @default(UNRESOLVED)
+  resolution  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  documentA   Document @relation("conflictA", fields: [documentAId], references: [id], onDelete: Cascade)
+  documentB   Document @relation("conflictB", fields: [documentBId], references: [id], onDelete: Cascade)
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([status])
+}
+
+enum ConflictStatus {
+  UNRESOLVED
+  RESOLVED_A
+  RESOLVED_B
+  RESOLVED_OTHER
+  DISMISSED
+}
+
+// ============================================================
+// SHARING & PERMISSIONS
+// ============================================================
+
+model Share {
+  id              String   @id @default(cuid())
+  patientId       String
+  doctorId        String
+  accessCode      String   @unique @default(cuid())
+  categories     String[] // which document categories to share
+  documentIds     String[] // specific documents if not full
+  scope           ShareScope @default(PARTIAL)
+  duration        ShareDuration
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  permissions     SharePermission[]
+  aiQueries       AiQuery[]
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([accessCode])
+}
+
+enum ShareScope {
+  FULL
+  PARTIAL
+}
+
+enum ShareDuration {
+  ONE_HOUR
+  TWENTY_FOUR_HOURS
+  SEVEN_DAYS
+  THIRTY_DAYS
+  UNTIL_REVOKED
+}
+
+model SharePermission {
+  id          String   @id @default(cuid())
+  shareId     String
+  resource    String   // document_id or category
+  resourceType String  // DOCUMENT, CATEGORY
+  canRead     Boolean  @default(true)
+  canDownload Boolean @default(false)
+  canAskAI    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  share       Share    @relation(fields: [shareId], references: [id], onDelete: Cascade)
+
+  @@index([shareId])
+}
+
+// ============================================================
+// AI / RAG - Ask My Records with Evidence
+// ============================================================
+
+model AiQuery {
+  id          String   @id @default(cuid())
+  userId      String
+  shareId     String?
+  patientId   String
+  question    String   @db.Text
+  context     Json?    // retrieved context snapshot
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  share       Share?   @relation(fields: [shareId], references: [id], onDelete: SetNull)
+  answer      AiAnswer?
+
+  @@index([patientId])
+  @@index([shareId])
+}
+
+model AiAnswer {
+  id          String   @id @default(cuid())
+  queryId     String   @unique
+  answer      String   @db.Text
+  confidence  Float    @default(0.0)
+  grounded    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  query       AiQuery  @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  evidence    Evidence[]
+}
+
+model Evidence {
+  id          String   @id @default(cuid())
+  answerId    String
+  documentId  String
+  pageNumber  Int
+  snippet     String   @db.Text
+  relevance   Float    @default(0.0)
+  entity      String?
+  value       String?
+  createdAt   DateTime @default(now())
+
+  answer      AiAnswer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([answerId])
+  @@index([documentId])
+}
+
+// ============================================================
+// AUDIT LOG (security)
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  resource    String?
+  resourceId  String?
+  ip          String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================================
+// CLINICAL NOTES (doctor annotations on shared records)
+// ============================================================
+
+model ClinicalNote {
+  id          String   @id @default(cuid())
+  patientId   String
+  doctorId    String
+  shareId     String
+  note        String   @db.Text
+  category    String   @default("general") // general, follow_up, referral, alert
+  isPinned    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([shareId])
+}
+
+// ============================================================
+// HEALTH SUMMARIES (AI-generated, multilingual)
+// ============================================================
+
+model HealthSummary {
+  id          String   @id @default(cuid())
+  patientId   String
+  language    String   @default("en")
+  summary     String   @db.Text
+  keyFindings String   @db.Text
+  recommendations String @db.Text
+  documentCount Int
+  generatedAt DateTime @default(now())
+
+  patient     Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
+// ============================================================
+// HEALTH GOALS & REMINDERS (patient-set personal health targets)
+// ============================================================
+
+model HealthGoal {
+  id           String    @id @default(cuid())
+  patientId    String
+  title        String
+  description  String?
+  type         String    // MEDICATION_ADHERENCE, LAB_TARGET, LIFESTYLE, APPOINTMENT, CUSTOM
+  targetValue  String?   // e.g. "HbA1c < 6.0", "Walk 10000 steps/day"
+  currentValue String?
+  status       String    @default("ACTIVE") // ACTIVE, COMPLETED, PAUSED, MISSED
+  dueDate      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  patient      Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([status])
+}
+
+// ============================================================
+// EMERGENCY ACCESS (first-responder critical info share)
+// ============================================================
+
+model EmergencyAccess {
+  id              String   @id @default(cuid())
+  patientId       String
+  accessCode      String   @unique @default(cuid())
+  contactName     String
+  contactRelation String
+  contactPhone    String?
+  contactEmail    String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+}
+
