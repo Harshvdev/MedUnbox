@@ -124,6 +124,11 @@ Notes:
   `THIRTY_DAYS`, `UNTIL_REVOKED`. The doctor must already be registered on MedUnbox.
 - AI tools (`ask_records`, `ask_patient_records`, `get_health_summary`) call Gemini and
   can fail with a quota/rate-limit error (`isError: true`, HTTP 429); retry after a pause.
+- Sensitive endpoints are rate-limited (login, register, upload, ask, summary, shares,
+  emergency contacts, the public emergency view). HTTP 429 responses include a
+  `Retry-After` header — respect it instead of retrying immediately. Doctor Ask
+  answers only ever cite records inside the share's scope (a PARTIAL share cannot
+  retrieve values from unshared categories).
 
 ---
 

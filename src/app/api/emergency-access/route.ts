@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentPatient } from "@/lib/session"
 import { db } from "@/lib/db"
+import { generateAccessCode } from "@/lib/access-code"
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit"
 import { z } from "zod"
 
 const createSchema = z.object({
@@ -51,6 +53,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const limiter = rateLimit(`emergency-contact:create:${patient.id}`, 20, 60 * 60 * 1000)
+    if (!limiter.ok) return tooManyRequests(limiter.retryAfter)
+
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== "object") {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
@@ -68,6 +73,9 @@ export async function POST(req: NextRequest) {
     const contact = await db.emergencyAccess.create({
       data: {
         patientId: patient.id,
+        // Capability token for the public /emergency/[code] view — must be
+        // cryptographically random, not the schema's cuid() fallback.
+        accessCode: generateAccessCode(),
         contactName: data.contactName.trim(),
         contactRelation: data.contactRelation.trim(),
         contactPhone: data.contactPhone?.trim() || null,

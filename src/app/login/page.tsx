@@ -31,7 +31,8 @@ export default function LoginPage() {
         redirect: false,
       })
       if (res?.error) {
-        toast.error(res.error)
+        // NextAuth v4 masks credentials-provider failures behind this code.
+        toast.error(res.error === "CredentialsSignin" ? "Invalid email or password" : res.error)
         setLoading(false)
         return
       }

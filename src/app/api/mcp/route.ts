@@ -133,12 +133,42 @@ async function handleMessage(
   }
 }
 
+/**
+ * Origins tool execution is allowed to target. Tool calls are executed by
+ * fetching our own API routes with the caller's session cookie, so a forged
+ * Host / X-Forwarded-Host header must never redirect that fetch (and the
+ * cookie) off-domain. NEXTAUTH_URL is the canonical self-origin.
+ */
+function allowedOrigins(): Set<string> {
+  const origins = new Set<string>(["http://localhost:3000", "http://127.0.0.1:3000"])
+  const configured = process.env.NEXTAUTH_URL ?? process.env.NEXT_PUBLIC_SITE_URL
+  if (configured) {
+    try {
+      origins.add(new URL(configured).origin)
+    } catch {
+      // ignore malformed config — localhost fallbacks remain
+    }
+  }
+  return origins
+}
+
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser()
   if (!user) {
     return NextResponse.json(
       jsonRpcError(null, JSONRPC_ERRORS.INTERNAL, "Unauthorized: log in first (see AGENTS.md)"),
       { status: 401 }
+    )
+  }
+
+  if (!allowedOrigins().has(req.nextUrl.origin)) {
+    return NextResponse.json(
+      jsonRpcError(
+        null,
+        JSONRPC_ERRORS.INTERNAL,
+        `Refusing to execute tools against untrusted origin ${req.nextUrl.origin}. Set NEXTAUTH_URL to this server's canonical URL.`
+      ),
+      { status: 400 }
     )
   }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { hash } from "bcryptjs"
 import { z } from "zod"
 import { db } from "@/lib/db"
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit"
 
 const registerSchema = z.object({
   name: z.string().min(2).max(80),
@@ -12,6 +13,10 @@ const registerSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    // 10 signups / hour / IP — stops bulk fake-account creation.
+    const limiter = rateLimit(`register:${getClientIp(req)}`, 10, 60 * 60 * 1000)
+    if (!limiter.ok) return tooManyRequests(limiter.retryAfter)
+
     const body = await req.json()
     const parsed = registerSchema.safeParse(body)
     if (!parsed.success) {
