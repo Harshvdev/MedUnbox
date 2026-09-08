@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
+import { getClientIp, rateLimit, tooManyRequests } from "@/lib/rate-limit"
 
 /**
  * GET /api/emergency/[code]
@@ -16,6 +17,9 @@ import { db } from "@/lib/db"
  *
  * It deliberately does NOT include documents, lab values, doctor notes, or any
  * other longitudinal record data.
+ *
+ * SECURITY: access codes are high-entropy random tokens (see lib/access-code),
+ * and this route is rate-limited per IP so codes cannot be brute-forced.
  */
 export async function GET(
   _req: NextRequest,
@@ -23,6 +27,18 @@ export async function GET(
 ) {
   try {
     const { code } = await params
+
+    // Malformed codes can never be valid — reject them before touching the DB
+    // so the rate-limit budget is spent only on plausible guesses.
+    if (!/^MB-[2-9A-HJKMNP-Z]{4}(-[2-9A-HJKMNP-Z]{4}){0,6}$/.test(code)) {
+      return NextResponse.json(
+        { error: "Invalid or inactive emergency access code" },
+        { status: 404 }
+      )
+    }
+
+    const limiter = rateLimit(`emergency:code:${getClientIp(_req)}`, 30, 60 * 1000)
+    if (!limiter.ok) return tooManyRequests(limiter.retryAfter)
 
     // Look up the emergency-access record. Only active codes are honored.
     const access = await db.emergencyAccess.findUnique({

@@ -12,15 +12,24 @@ export interface SessionUser {
 
 /**
  * Returns the authenticated user, or null if not signed in.
+ * The JWT is validated against the database so a session for a deleted
+ * user (e.g. after a DB reset/reseed) is treated as signed out instead of
+ * producing ghost sessions that render empty pages.
  */
 export async function getCurrentUser(): Promise<SessionUser | null> {
   const session = await getServerSession(authOptions)
   if (!session?.user) return null
+  const id = (session.user as { id: string }).id
+  const user = await db.user.findUnique({
+    where: { id },
+    select: { id: true, email: true, name: true, role: true },
+  })
+  if (!user) return null
   return {
-    id: (session.user as { id: string }).id,
-    email: session.user.email!,
-    name: session.user.name,
-    role: (session.user as { role: string }).role,
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
   }
 }
 

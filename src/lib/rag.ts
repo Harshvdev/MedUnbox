@@ -13,11 +13,42 @@ import { answerWithEvidence, type RagContext } from "@/lib/ai"
  * medical records with specific terminology.
  */
 
+/** When a DOCTOR asks via a Share, retrieval must stay inside that share's scope. */
+export interface ShareScopeFilter {
+  scope: string // "FULL" | "PARTIAL"
+  categories: string[]
+  documentIds: string[]
+}
+
+/**
+ * Resolve a PARTIAL share to the concrete set of document ids it covers
+ * (explicitly shared ids + documents in shared categories). Returns null for
+ * unrestricted access (patient asking about own records or FULL share).
+ * A PARTIAL share that resolves to zero documents yields an empty set —
+ * share nothing rather than everything.
+ */
+async function resolveScopeDocumentIds(
+  patientId: string,
+  scope?: ShareScopeFilter
+): Promise<string[] | null> {
+  if (!scope || scope.scope !== "PARTIAL") return null
+  const clauses: Array<Record<string, unknown>> = []
+  if (scope.categories.length > 0) clauses.push({ category: { in: scope.categories } })
+  if (scope.documentIds.length > 0) clauses.push({ id: { in: scope.documentIds } })
+  if (clauses.length === 0) return [] // share nothing rather than everything
+  const docs = await db.document.findMany({
+    where: { patientId, OR: clauses },
+    select: { id: true },
+  })
+  return docs.map((d) => d.id)
+}
+
 export async function askMyRecords(
   question: string,
   patientId: string,
   userId: string,
-  shareId?: string
+  shareId?: string,
+  scope?: ShareScopeFilter
 ): Promise<{
   answer: string
   evidence: Array<{
@@ -33,12 +64,14 @@ export async function askMyRecords(
   grounded: boolean
 }> {
   const keywords = extractKeywords(question)
+  const allowedDocIds = await resolveScopeDocumentIds(patientId, scope)
 
   // 1. Search medical values — match any keyword against entity/label/sourceText
   const matchingValues = keywords.length
     ? await db.medicalValue.findMany({
         where: {
           patientId,
+          documentId: allowedDocIds ? { in: allowedDocIds } : undefined,
           OR: keywords.flatMap((k) => [
             { entity: { contains: k, mode: "insensitive" } },
             { label: { contains: k, mode: "insensitive" } },
@@ -51,7 +84,10 @@ export async function askMyRecords(
         take: 25,
       })
     : await db.medicalValue.findMany({
-        where: { patientId },
+        where: {
+          patientId,
+          documentId: allowedDocIds ? { in: allowedDocIds } : undefined,
+        },
         include: { document: true },
         orderBy: { recordedAt: "desc" },
         take: 25,
@@ -61,7 +97,10 @@ export async function askMyRecords(
   const matchingText = keywords.length
     ? await db.extractedText.findMany({
         where: {
-          document: { patientId },
+          document: {
+            patientId,
+            ...(allowedDocIds ? { id: { in: allowedDocIds } } : {}),
+          },
           OR: keywords.map((k) => ({
             cleanedText: { contains: k, mode: "insensitive" as const },
           })),
@@ -71,11 +110,12 @@ export async function askMyRecords(
       })
     : []
 
-  // 3. Search timeline events
+  // 3. Search timeline events — scoped events only when retrieval is restricted
   const matchingEvents = keywords.length
     ? await db.timelineEvent.findMany({
         where: {
           patientId,
+          sourceDocId: allowedDocIds ? { in: allowedDocIds } : undefined,
           OR: keywords.flatMap((k) => [
             { title: { contains: k, mode: "insensitive" } },
             { description: { contains: k, mode: "insensitive" } },
@@ -137,7 +177,10 @@ export async function askMyRecords(
   // 3b. Always include the medication list — the list is short, and
   // "what medications..." questions have no keyword to match drug names.
   const medications = await db.medication.findMany({
-    where: { patientId },
+    where: {
+      patientId,
+      sourceDocId: allowedDocIds ? { in: allowedDocIds } : undefined,
+    },
     orderBy: { createdAt: "desc" },
     take: 10,
   })
@@ -166,7 +209,10 @@ export async function askMyRecords(
   // Fallback: if no context, pull latest values so the AI can still respond
   if (context.length === 0) {
     const latestValues = await db.medicalValue.findMany({
-      where: { patientId },
+      where: {
+        patientId,
+        documentId: allowedDocIds ? { in: allowedDocIds } : undefined,
+      },
       include: { document: true },
       orderBy: { recordedAt: "desc" },
       take: 10,

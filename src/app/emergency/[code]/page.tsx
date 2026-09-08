@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation"
+import { headers } from "next/headers"
 import { db } from "@/lib/db"
+import { rateLimit } from "@/lib/rate-limit"
 import {
   Siren,
   Droplet,
@@ -218,6 +220,20 @@ export default async function PublicEmergencyPage({
   params: Promise<{ code: string }>
 }) {
   const { code } = await params
+
+  // Reject codes that can never be valid before spending a DB hit, and
+  // rate-limit lookups so the code space can't be probed from the page.
+  if (!/^MB-[2-9A-HJKMNP-Z]{4}(-[2-9A-HJKMNP-Z]{4}){0,6}$/.test(code)) {
+    notFound()
+    return
+  }
+  const hdrs = await headers()
+  const ip = hdrs.get("x-forwarded-for")?.split(",")[0].trim() ?? hdrs.get("x-real-ip") ?? "unknown"
+  if (!rateLimit(`emergency:page:${ip}`, 30, 60 * 1000).ok) {
+    notFound()
+    return
+  }
+
   const data = await loadEmergencyData(code)
   if (!data) {
     notFound()

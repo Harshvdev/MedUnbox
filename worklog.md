@@ -1169,3 +1169,80 @@ Stage Summary:
 - 1 new feature: Document Comparison (side-by-side view with value table)
 - VLM ratings: compare 8/10, trends 8/10, ask with recent questions working
 - Lint clean (0 errors, 1 pre-existing warning), all routes return 200/307 (expected), dev server healthy
+
+---
+Task ID: SEC-1
+Agent: main (security hardening round)
+Task: Security audit + fixes — capability-token strength, rate limiting, share-scope
+enforcement in RAG, MCP origin lockdown, upload hardening, security headers,
+login anti-enumeration, build-error gate.
+
+Security Issues Found & Fixed:
+
+1. Guessable access codes (HIGH): Share.accessCode and EmergencyAccess.accessCode
+   used Prisma's cuid() default — timestamp+counter structured — while acting as
+   capability tokens (public /emergency/[code] view, share identity). Added
+   src/lib/access-code.ts (crypto.randomBytes, MB-XXXX-XXXX-XXXX-XXXX, ~79 bits,
+   unambiguous alphabet, uniform sampling). Both create sites now set the code
+   explicitly; wrote + ran scripts/rotate-access-codes.ts (rotated 6 existing
+   share codes; 0 emergency contacts existed).
+
+2. No rate limiting (HIGH): added src/lib/rate-limit.ts (in-memory sliding window,
+   fail-open, periodic sweep, per-IP via x-forwarded-for). Applied to:
+   login (10/5min per email + 30/5min per IP, inside credentials authorize),
+   register (10/h per IP), public emergency API + page (30/min per IP, and
+   non-MB-format codes are rejected before any DB hit), ask (10/min per user —
+   Gemini burn cap), summary (10/5min per patient), upload (30/5min per patient),
+   share creation + emergency-contact creation (20/h per patient). 429s include
+   Retry-After. Verified live: emergency burst returned 200×29 then 429×6.
+
+3. Doctor RAG ignored share scope (HIGH authz gap): a doctor with a PARTIAL share
+   (e.g. LAB_REPORT only) could ask about anything and RAG would retrieve meds,
+   unshared values, and full extracted text. askMyRecords now takes a
+   ShareScopeFilter; PARTIAL shares resolve to concrete allowed document ids
+   (shared categories + explicit documentIds) and medicalValue / extractedText /
+   timelineEvent / medication / fallback queries are all filtered to those ids.
+   Verified: LAB_REPORT-only share sees 3/4 docs, excludes the VACCINATION doc.
+
+4. MCP cookie-forwarding depended on Host header (MEDIUM): /api/mcp executes tools
+   by fetching our own routes with the caller's cookie; a forged Host /
+   X-Forwarded-Host could point that fetch off-domain. POST now refuses origins
+   outside {NEXTAUTH_URL, localhost:3000, 127.0.0.1:3000} with a 400 before any
+   tool executes. Verified: normal tool calls still pass, forged host blocked.
+
+5. Upload hardening (MEDIUM): previously accepted any content-type/content with
+   only a size cap and unvalidated category (Prisma enum → 500 on bad value).
+   Now: MIME allowlist (PDF/JPEG/PNG/WebP/HEIC/HEIF), magic-byte content sniffing
+   (defeats spoofed content-type), category validated against DOCUMENT_CATEGORIES,
+   title required + ≤200 chars, empty-file rejection. Verified live: text/plain →
+   415, text renamed to .png → 415, bad category → 400.
+
+6. Security headers (MEDIUM): next.config.ts now sets CSP (self + inline; frame-src
+   self + ImageKit; object-src none; frame-ancestors none; unsafe-eval dev-only),
+   X-Frame-Options DENY, nosniff, Referrer-Policy strict-origin-when-cross-origin,
+   Permissions-Policy (camera/mic/geo/payment/usb off), HSTS. Verified on all pages.
+
+7. Login user-enumeration (LOW-MED): authorize returned "No account found with this
+   email" vs "Incorrect password" and skipped bcrypt for unknown users (timing
+   leak). Now: single generic error, dummy-hash bcrypt compare for unknown emails
+   (constant-ish time), plus the per-email/IP login rate limit. Login page maps
+   NextAuth's CredentialsSignin code to "Invalid email or password".
+
+8. ignoreBuildErrors removed: next.config.ts no longer silences TypeScript build
+   errors (tsc is currently clean).
+
+Also: removed dead scaffold route src/app/api/route.ts; documented the 429 /
+Retry-After behavior and share-scoped doctor answers in AGENTS.md.
+
+Verification: bunx tsc --noEmit clean; bun run lint 0 errors (1 pre-existing
+warning); login (patient + doctor) works; MCP initialize/tools/call works;
+pages 200 under new CSP; emergency public view works with new MB- code;
+rate limiter burst test OK; upload rejection tests OK.
+
+Files changed: src/lib/access-code.ts (new), src/lib/rate-limit.ts (new),
+scripts/rotate-access-codes.ts (new), src/lib/auth.ts, src/lib/rag.ts,
+src/app/api/ask/route.ts, src/app/api/summary/route.ts, src/app/api/share/route.ts,
+src/app/api/emergency/[code]/route.ts, src/app/api/emergency-access/route.ts,
+src/app/api/documents/upload/route.ts, src/app/api/auth/register/route.ts,
+src/app/api/mcp/route.ts, src/app/emergency/[code]/page.tsx, src/app/login/page.tsx,
+next.config.ts, AGENTS.md. Removed: src/app/api/route.ts.

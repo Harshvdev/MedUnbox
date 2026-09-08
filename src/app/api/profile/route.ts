@@ -6,8 +6,8 @@ import { z } from "zod"
 const profileSchema = z.object({
   name: z.string().min(1).max(80).optional(),
   dateOfBirth: z.string().optional(),
-  gender: z.string().optional(),
-  bloodGroup: z.string().optional(),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]).or(z.literal("")).optional(),
+  bloodGroup: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]).or(z.literal("")).optional(),
   phone: z.string().optional(),
   address: z.string().optional(),
   emergencyContact: z.string().optional(),
