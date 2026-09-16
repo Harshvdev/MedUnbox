@@ -207,6 +207,24 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Too many login attempts. Please wait a few minutes and try again.")
         }
 
+        const email = credentials.email.toLowerCase()
+
+        // Brute-force guard: 10 attempts / 5 min / (email + IP).
+        // Keyed by email too, so one IP can't hammer many accounts quietly
+        // and one account can't be sprayed from many IPs without tripping it.
+        const ip =
+          req && typeof req.headers?.get === "function"
+            ? (req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+              req.headers.get("x-real-ip") ??
+              "unknown")
+            : "unknown"
+        const limited =
+          !rateLimit(`login:email:${email}`, 10, 5 * 60 * 1000).ok ||
+          !rateLimit(`login:ip:${ip}`, 30, 5 * 60 * 1000).ok
+        if (limited) {
+          throw new Error("Too many login attempts. Please wait a few minutes and try again.")
+        }
+
         const user = await db.user.findUnique({
           where: { email },
           include: {
