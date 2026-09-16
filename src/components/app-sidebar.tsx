@@ -25,6 +25,7 @@ import {
   BookOpen,
   Target,
   Siren,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -65,18 +66,51 @@ const doctorNav: NavItem[] = [
   { href: "/doctor/ask", label: "Ask My Records", icon: Brain },
 ]
 
+const pharmacistNav: NavItem[] = [
+  { href: "/pharmacist", label: "Dashboard", icon: LayoutDashboard },
+]
+
+const labTechNav: NavItem[] = [
+  { href: "/lab-technician", label: "Dashboard", icon: LayoutDashboard },
+]
+
 export function AppSidebar({
   role,
   userName,
   badgeCounts,
 }: {
-  role: "PATIENT" | "DOCTOR"
+  role: "PATIENT" | "DOCTOR" | "PHARMACIST" | "LAB_TECHNICIAN" | string
   userName?: string | null
   badgeCounts?: { conflicts?: number; shares?: number }
 }) {
   const pathname = usePathname()
-  const nav = role === "DOCTOR" ? doctorNav : patientNav
+  const nav =
+    role === "DOCTOR"
+      ? doctorNav
+      : role === "PHARMACIST"
+      ? pharmacistNav
+      : role === "LAB_TECHNICIAN"
+      ? labTechNav
+      : patientNav
   const [collapsed, setCollapsed] = useState(false)
+
+  const portalSubtitle =
+    role === "DOCTOR"
+      ? "Doctor Portal"
+      : role === "PHARMACIST"
+      ? "Pharmacist Portal"
+      : role === "LAB_TECHNICIAN"
+      ? "Lab Portal"
+      : "Patient Vault"
+
+  const PortalIcon =
+    role === "DOCTOR"
+      ? Stethoscope
+      : role === "PHARMACIST"
+      ? Pill
+      : role === "LAB_TECHNICIAN"
+      ? FlaskConical
+      : ShieldCheck
 
   return (
     <aside
@@ -89,13 +123,13 @@ export function AppSidebar({
       <div className="flex h-16 items-center gap-2 border-b px-4">
         <Link href="/" className="flex items-center gap-2">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-            {role === "DOCTOR" ? <Stethoscope className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />}
+            <PortalIcon className="h-4 w-4" />
           </div>
           {!collapsed && (
             <div className="leading-none">
               <span className="font-bold tracking-tight">MedUnbox</span>
               <p className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-                {role === "DOCTOR" ? "Doctor Portal" : "Patient Vault"}
+                {portalSubtitle}
               </p>
             </div>
           )}
@@ -188,4 +222,4 @@ export function AppSidebar({
   )
 }
 
-export { patientNav, doctorNav }
+export { patientNav, doctorNav, pharmacistNav, labTechNav }

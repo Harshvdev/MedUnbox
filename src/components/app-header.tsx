@@ -8,18 +8,35 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useState } from "react"
-import { patientNav, doctorNav } from "@/components/app-sidebar"
+import { patientNav, doctorNav, pharmacistNav, labTechNav } from "@/components/app-sidebar"
 import { signOut } from "next-auth/react"
 import { GlobalSearch } from "@/components/global-search"
 import { NotificationsLoader } from "@/components/notifications-loader"
+import { Pill, FlaskConical } from "lucide-react"
 
 export function AppHeader() {
   const { data: session } = useSession()
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const role = session?.user?.role === "DOCTOR" ? "DOCTOR" : "PATIENT"
-  const nav = role === "DOCTOR" ? doctorNav : patientNav
+  const role = session?.user?.role || "PATIENT"
+  const nav =
+    role === "DOCTOR"
+      ? doctorNav
+      : role === "PHARMACIST"
+      ? pharmacistNav
+      : role === "LAB_TECHNICIAN"
+      ? labTechNav
+      : patientNav
   const userName = session?.user?.name
+
+  const HeaderIcon =
+    role === "DOCTOR"
+      ? Stethoscope
+      : role === "PHARMACIST"
+      ? Pill
+      : role === "LAB_TECHNICIAN"
+      ? FlaskConical
+      : ShieldCheck
 
   return (
     <>
@@ -34,7 +51,7 @@ export function AppHeader() {
         </Button>
         <div className="flex items-center gap-2 md:hidden">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            {role === "DOCTOR" ? <Stethoscope className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+            <HeaderIcon className="h-3.5 w-3.5" />
           </div>
           <span className="font-bold">MedUnbox</span>
         </div>

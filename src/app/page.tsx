@@ -40,7 +40,19 @@ export default function Home() {
             <ThemeToggle />
             {status === "authenticated" ? (
               <Button asChild>
-                <Link href="/dashboard">Go to Dashboard <ArrowRight className="ml-1 h-4 w-4" /></Link>
+                <Link
+                  href={
+                    session?.user?.role === "DOCTOR"
+                      ? "/doctor"
+                      : session?.user?.role === "PHARMACIST"
+                      ? "/pharmacist"
+                      : session?.user?.role === "LAB_TECHNICIAN"
+                      ? "/lab-technician"
+                      : "/dashboard"
+                  }
+                >
+                  Go to Dashboard <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
               </Button>
             ) : (
               <>

@@ -76,3 +76,25 @@ export async function getCurrentDoctor() {
     where: { userId: user.id },
   })
 }
+
+/**
+ * Get the pharmacist profile for the current user (if they are a pharmacist).
+ */
+export async function getCurrentPharmacist() {
+  const user = await getCurrentUser()
+  if (!user || user.role !== "PHARMACIST") return null
+  return db.pharmacist.findUnique({
+    where: { userId: user.id },
+  })
+}
+
+/**
+ * Get the lab technician profile for the current user (if they are a lab technician).
+ */
+export async function getCurrentLabTechnician() {
+  const user = await getCurrentUser()
+  if (!user || user.role !== "LAB_TECHNICIAN") return null
+  return db.labTechnician.findUnique({
+    where: { userId: user.id },
+  })
+}

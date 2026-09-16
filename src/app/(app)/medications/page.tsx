@@ -1,6 +1,6 @@
 import { getCurrentPatient } from "@/lib/session"
 import { db } from "@/lib/db"
-import { Pill, Clock, Calendar, AlertCircle, Sunrise, Sun, Sunset, Moon, Activity } from "lucide-react"
+import { Pill, Clock, Calendar, AlertCircle, Sunrise, Sun, Sunset, Moon, Activity, FileText } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -65,10 +65,21 @@ export default async function MedicationsPage() {
   const patient = await getCurrentPatient()
   if (!patient) return null
 
-  const medications = await db.medication.findMany({
-    where: { patientId: patient.id },
-    orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-  })
+  const [medications, prescriptions] = await Promise.all([
+    db.medication.findMany({
+      where: { patientId: patient.id },
+      orderBy: { createdAt: "desc" },
+    }),
+    db.prescription.findMany({
+      where: { patientId: patient.id },
+      include: {
+        doctor: { include: { user: { select: { name: true } } } },
+        items: true,
+        labOrders: true,
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+  ])
 
   const activeMeds = medications.filter((m) => m.status === "ACTIVE")
   const discontinuedMeds = medications.filter((m) => m.status !== "ACTIVE")
@@ -278,6 +289,116 @@ export default async function MedicationsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Prescriptions & Clinical Orders */}
+          {prescriptions.length > 0 && (
+            <Card className="border-border/60">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-4 w-4 text-primary" /> Doctor Prescriptions &amp; Fulfillment
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Official clinical prescriptions issued by your doctors, fulfilled by licensed pharmacists and diagnostic labs
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {prescriptions.map((rx) => (
+                  <div key={rx.id} className="p-4 rounded-xl border bg-muted/20 space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2">
+                      <div>
+                        <p className="font-semibold text-sm">
+                          {rx.diagnosis ? `Diagnosis: ${rx.diagnosis}` : "Clinical Prescription"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Prescribed by Dr. {rx.doctor?.user?.name || "Doctor"} • {formatDate(rx.createdAt)}
+                        </p>
+                      </div>
+                      <Badge
+                        className={
+                          rx.status === "COMPLETED"
+                            ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-xs"
+                            : "bg-amber-500/10 text-amber-600 border-amber-500/20 text-xs"
+                        }
+                      >
+                        {rx.status}
+                      </Badge>
+                    </div>
+
+                    {rx.notes && (
+                      <p className="text-xs text-muted-foreground italic">
+                        Doctor&apos;s Advice: {rx.notes}
+                      </p>
+                    )}
+
+                    {/* Prescribed Meds */}
+                    {rx.items && rx.items.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Medications &amp; Pharmacy Dispensation
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {rx.items.map((item: any) => (
+                            <div key={item.id} className="p-2.5 rounded border bg-card text-xs flex justify-between items-start gap-2">
+                              <div>
+                                <p className="font-medium text-foreground">{item.medicationName} ({item.dosage})</p>
+                                <p className="text-muted-foreground text-[11px]">{item.frequency}</p>
+                                {item.instructions && <p className="text-muted-foreground text-[11px]">{item.instructions}</p>}
+                                {item.dispenseNotes && <p className="text-emerald-600 text-[11px] italic mt-0.5">{item.dispenseNotes}</p>}
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  item.status === "DISPENSED"
+                                    ? "text-emerald-600 border-emerald-500/30 text-[10px]"
+                                    : "text-amber-600 border-amber-500/30 text-[10px]"
+                                }
+                              >
+                                {item.status}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Lab Tests */}
+                    {rx.labOrders && rx.labOrders.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          Diagnostic Lab Orders
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {rx.labOrders.map((lo: any) => (
+                            <div key={lo.id} className="p-2.5 rounded border bg-card text-xs flex justify-between items-start gap-2">
+                              <div>
+                                <p className="font-medium text-foreground">{lo.testName}</p>
+                                {lo.instructions && <p className="text-muted-foreground text-[11px]">{lo.instructions}</p>}
+                                {lo.resultSummary && (
+                                  <p className="text-emerald-600 font-medium text-[11px] mt-0.5">
+                                    Result: {lo.resultSummary}
+                                  </p>
+                                )}
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className={
+                                  lo.status === "COMPLETED"
+                                    ? "text-emerald-600 border-emerald-500/30 text-[10px]"
+                                    : "text-amber-600 border-amber-500/30 text-[10px]"
+                                }
+                              >
+                                {lo.status}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Disclaimer */}
           <Card className="border-amber-500/30 bg-amber-500/5">

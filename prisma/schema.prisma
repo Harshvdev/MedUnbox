@@ -34,6 +34,9 @@ model User {
   sessions      Session[]
   patient       Patient?
   doctor        Doctor?
+  pharmacist    Pharmacist?
+  labTechnician LabTechnician?
+  hcpAccesses   HcpPatientAccess[]
   aiQueries     AiQuery[]
   auditLogs     AuditLog[]
 
@@ -43,6 +46,8 @@ model User {
 enum Role {
   PATIENT
   DOCTOR
+  PHARMACIST
+  LAB_TECHNICIAN
   ADMIN
 }
 
@@ -90,6 +95,7 @@ model VerificationToken {
 model Patient {
   id              String   @id @default(cuid())
   userId          String   @unique
+  aadhaar         String?  @unique
   dateOfBirth     DateTime?
   gender          String?
   bloodGroup      String?
@@ -110,6 +116,8 @@ model Patient {
   healthSummaries HealthSummary[]
   healthGoals     HealthGoal[]
   emergencyAccess EmergencyAccess[]
+  prescriptions   Prescription[]
+  hcpAccesses     HcpPatientAccess[]
 }
 
 model Doctor {
@@ -125,6 +133,33 @@ model Doctor {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   shares          Share[]
   clinicalNotes   ClinicalNote[]
+  prescriptions   Prescription[]
+}
+
+model Pharmacist {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  registrationNo  String?
+  pharmacyName    String?
+  phone           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dispensedItems  PrescriptionItem[]
+}
+
+model LabTechnician {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  registrationNo  String?
+  labName         String?
+  phone           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  completedOrders LabTestOrder[]
 }
 
 // ============================================================
@@ -149,6 +184,7 @@ model Document {
   processingError String?
   uploadedAt      DateTime       @default(now())
   processedAt     DateTime?
+  uploaderId      String?
 
   patient         Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
   pages           DocumentPage[]
@@ -161,11 +197,13 @@ model Document {
   conflictsAsB    Conflict[]     @relation("conflictB")
   timelineEvents  TimelineEvent[]
   evidenceItems   Evidence[]
+  labTestOrders   LabTestOrder[]
 
   @@index([patientId])
   @@index([fileHash])
   @@index([category])
   @@index([status])
+  @@index([uploaderId])
 }
 
 enum DocumentCategory {
@@ -716,4 +754,105 @@ model EmergencyAccess {
 
   @@index([patientId])
 }
+
+// ============================================================
+// HEALTHCARE PROFESSIONAL PATIENT ACCESS & CONSENT
+// ============================================================
+
+model HcpPatientAccess {
+  id              String   @id @default(cuid())
+  patientId       String
+  hcpUserId       String
+  hcpRole         Role
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+
+  patient         Patient  @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  user            User     @relation(fields: [hcpUserId], references: [id], onDelete: Cascade)
+
+  @@unique([patientId, hcpUserId])
+  @@index([patientId])
+  @@index([hcpUserId])
+}
+
+// ============================================================
+// STRUCTURED PRESCRIPTION & LAB TEST PIPELINE
+// ============================================================
+
+model Prescription {
+  id              String             @id @default(cuid())
+  patientId       String
+  doctorId        String
+  diagnosis       String?
+  notes           String?            @db.Text
+  status          PrescriptionStatus @default(PENDING)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  patient         Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Doctor             @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  items           PrescriptionItem[]
+  labOrders       LabTestOrder[]
+
+  @@index([patientId])
+  @@index([doctorId])
+}
+
+model PrescriptionItem {
+  id             String         @id @default(cuid())
+  prescriptionId String
+  medicationName String
+  dosage         String
+  frequency      String
+  instructions   String?
+  status         DispenseStatus @default(PENDING)
+  dispensedAt    DateTime?
+  pharmacistId   String?
+  dispenseNotes  String?
+
+  prescription   Prescription   @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  pharmacist     Pharmacist?    @relation(fields: [pharmacistId], references: [id], onDelete: SetNull)
+
+  @@index([prescriptionId])
+  @@index([pharmacistId])
+}
+
+model LabTestOrder {
+  id              String         @id @default(cuid())
+  prescriptionId  String
+  testName        String
+  instructions    String?
+  status          LabOrderStatus @default(PENDING)
+  resultSummary   String?        @db.Text
+  resultValues    Json?
+  completedAt     DateTime?
+  labTechnicianId String?
+  documentId      String?
+
+  prescription    Prescription   @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  labTechnician   LabTechnician? @relation(fields: [labTechnicianId], references: [id], onDelete: SetNull)
+  document        Document?      @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  @@index([prescriptionId])
+  @@index([labTechnicianId])
+  @@index([documentId])
+}
+
+enum PrescriptionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum DispenseStatus {
+  PENDING
+  DISPENSED
+  UNAVAILABLE
+}
+
+enum LabOrderStatus {
+  PENDING
+  COMPLETED
+}
+
 
