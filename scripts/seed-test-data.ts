@@ -110,6 +110,8 @@ async function main() {
   const patient = await db.patient.create({
     data: {
       userId: user.id,
+      aadhaar: '123456789012',
+      phone: '9876543210',
       dateOfBirth: new Date('1990-05-14'),
       gender: 'FEMALE',
       bloodGroup: 'B+',
@@ -294,10 +296,155 @@ Impression: Glycemic control borderline; dyslipidemia; vitamin D deficiency.`
   await detectTrends(patient.id)
   const trendCount = await db.trend.count({ where: { patientId: patient.id } })
 
-  console.log('Seeded test account:')
-  console.log('  email:    ' + EMAIL)
-  console.log('  password: ' + PASSWORD)
-  console.log('  documents: 2, medical values: ' + values.length + ', timeline events: 5, trends: ' + trendCount)
+  // ============================================================
+  // SEED HEALTHCARE PROFESSIONALS (DOCTOR, PHARMACIST, LAB TECH)
+  // ============================================================
+
+  // 1. Doctor: Dr. Sarah Jenkins
+  await db.user.deleteMany({ where: { email: 'qa.doctor@medunbox.test' } })
+  const doctorUser = await db.user.create({
+    data: {
+      email: 'qa.doctor@medunbox.test',
+      passwordHash: await hash('Test@1234', 10),
+      name: 'Dr. Sarah Jenkins',
+      role: 'DOCTOR',
+    },
+  })
+  const doctor = await db.doctor.create({
+    data: {
+      userId: doctorUser.id,
+      registrationNo: 'MCI-2015-88492',
+      specialization: 'Internal Medicine & Endocrinology',
+      hospital: 'Apollo Medical Center',
+      phone: '9876543210',
+    },
+  })
+
+  // 2. Pharmacist: Alex Reed, RPh
+  await db.user.deleteMany({ where: { email: 'qa.pharmacist@medunbox.test' } })
+  const pharmacistUser = await db.user.create({
+    data: {
+      email: 'qa.pharmacist@medunbox.test',
+      passwordHash: await hash('Test@1234', 10),
+      name: 'Alex Reed, RPh',
+      role: 'PHARMACIST',
+    },
+  })
+  const pharmacist = await db.pharmacist.create({
+    data: {
+      userId: pharmacistUser.id,
+      registrationNo: 'PCI-2018-44910',
+      pharmacyName: 'MedLife Central Pharmacy',
+      phone: '9876543211',
+    },
+  })
+
+  // 3. Lab Technician: Jordan Blake, MLT
+  await db.user.deleteMany({ where: { email: 'qa.lab@medunbox.test' } })
+  const labUser = await db.user.create({
+    data: {
+      email: 'qa.lab@medunbox.test',
+      passwordHash: await hash('Test@1234', 10),
+      name: 'Jordan Blake, MLT',
+      role: 'LAB_TECHNICIAN',
+    },
+  })
+  const labTechnician = await db.labTechnician.create({
+    data: {
+      userId: labUser.id,
+      registrationNo: 'MLT-2020-11203',
+      labName: 'Sun Diagnostic Laboratory',
+      phone: '9876543212',
+    },
+  })
+
+  // 4. Grant 30-day Access to HCPs for the test patient
+  const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+
+  // Doctor share
+  await db.share.create({
+    data: {
+      patientId: patient.id,
+      doctorId: doctor.id,
+      scope: 'FULL',
+      duration: 'THIRTY_DAYS',
+      expiresAt: thirtyDays,
+      isActive: true,
+      categories: ['ALL'],
+    },
+  })
+
+  // HCP Access records
+  await db.hcpPatientAccess.createMany({
+    data: [
+      { patientId: patient.id, hcpUserId: doctorUser.id, hcpRole: 'DOCTOR', expiresAt: thirtyDays },
+      { patientId: patient.id, hcpUserId: pharmacistUser.id, hcpRole: 'PHARMACIST', expiresAt: thirtyDays },
+      { patientId: patient.id, hcpUserId: labUser.id, hcpRole: 'LAB_TECHNICIAN', expiresAt: thirtyDays },
+    ],
+    skipDuplicates: true,
+  })
+
+  // 5. Seed sample prescription with items for Pharmacist and Lab Tech
+  await db.prescription.create({
+    data: {
+      patientId: patient.id,
+      doctorId: doctor.id,
+      diagnosis: 'Prediabetes & Mild Microcytic Anemia',
+      notes: 'Maintain low-GI diet, 30 min exercise daily. Hydration minimum 2.5L/day. Review lab reports in 4 weeks.',
+      status: 'PENDING',
+      items: {
+        create: [
+          {
+            medicationName: 'Metformin Hydrochloride',
+            dosage: '500 mg',
+            frequency: 'Twice daily after meals',
+            instructions: 'Take with food to prevent GI distress',
+            status: 'PENDING',
+          },
+          {
+            medicationName: 'Ferrous Ascorbate',
+            dosage: '100 mg',
+            frequency: 'Once daily at bedtime',
+            instructions: 'Take with vitamin C or orange juice',
+            status: 'DISPENSED',
+            dispensedAt: new Date(),
+            pharmacistId: pharmacist.id,
+            dispenseNotes: 'Dispensed 30 tablets. Instructed patient on iron compliance.',
+          },
+        ],
+      },
+      labOrders: {
+        create: [
+          {
+            testName: 'HbA1c Glycated Hemoglobin',
+            instructions: 'Fasting specimen. Evaluate 3-month glycemic response.',
+            status: 'PENDING',
+          },
+          {
+            testName: 'Complete Blood Count (CBC) with Peripheral Smear',
+            instructions: 'Check RBC indices and reticulocyte count.',
+            status: 'COMPLETED',
+            resultSummary: 'Hb 11.2 g/dL, MCV 74 fL. Microcytosis persisting but improved from baseline 9.7 g/dL.',
+            completedAt: new Date(),
+            labTechnicianId: labTechnician.id,
+          },
+        ],
+      },
+    },
+  })
+
+  console.log('Seeded test accounts:')
+  console.log('  Patient:    Aadhaar: 123456789012 (OTP: any 6 digits e.g. 123456)')
+  console.log('              Email:   ' + EMAIL + ' / ' + PASSWORD)
+  console.log('  Doctor:     Name:    Dr. Sarah Jenkins')
+  console.log('              Phone:   9876543210')
+  console.log('              Reg No:  MCI-2015-88492')
+  console.log('  Pharmacist: Name:    Alex Reed, RPh')
+  console.log('              Phone:   9876543211')
+  console.log('              Reg No:  PCI-2018-44910')
+  console.log('  Lab Tech:   Name:    Jordan Blake, MLT')
+  console.log('              Phone:   9876543212')
+  console.log('              Reg No:  MLT-2020-11203')
 }
 
 main()

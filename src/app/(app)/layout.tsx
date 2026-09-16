@@ -12,6 +12,8 @@ export default async function AppLayout({
   const user = await getCurrentUser()
   if (!user) redirect("/login")
   if (user.role === "DOCTOR") redirect("/doctor")
+  if (user.role === "PHARMACIST") redirect("/pharmacist")
+  if (user.role === "LAB_TECHNICIAN") redirect("/lab-technician")
 
   const patient = await getCurrentPatient()
   let badgeCounts: { conflicts?: number; shares?: number } = {}

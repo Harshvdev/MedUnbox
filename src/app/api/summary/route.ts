@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentPatient, getCurrentUser } from "@/lib/session"
 import { db } from "@/lib/db"
 import { generatePatientSummary } from "@/lib/ai"
+import { rateLimit, tooManyRequests } from "@/lib/rate-limit"
 import { formatDate, VALUE_STATUS_META, TREND_DIRECTION_META } from "@/lib/constants"
 
 /**
@@ -16,6 +17,11 @@ export async function GET(req: NextRequest) {
     if (!patient || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+
+    // Summary generation calls Gemini — allow periodic refreshes but not a
+    // high-frequency loop (the summary page refresh button included).
+    const limiter = rateLimit(`summary:${patient.id}`, 10, 5 * 60 * 1000)
+    if (!limiter.ok) return tooManyRequests(limiter.retryAfter)
 
     // Locale lives on the User record, not in the session
     const dbUser = await db.user.findUnique({

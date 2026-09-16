@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUser, getCurrentPatient } from "@/lib/session"
 import { db } from "@/lib/db"
 import { askMyRecords } from "@/lib/rag"
+import { rateLimit, tooManyRequests } from "@/lib/rate-limit"
 import { z } from "zod"
 
 const askSchema = z.object({
@@ -23,9 +24,14 @@ export async function POST(req: NextRequest) {
 
     const { question, patientId, shareId } = parsed.data
 
+    // Every call hits Gemini — cap the burn rate per user.
+    const limiter = rateLimit(`ask:${user.id}`, 10, 60 * 1000)
+    if (!limiter.ok) return tooManyRequests(limiter.retryAfter)
+
     // Authorization: patient asks about their own records, or doctor with active share
     let targetPatientId = patientId
     let activeShareId = shareId
+    let shareScope: import("@/lib/rag").ShareScopeFilter | undefined
 
     if (user.role === "PATIENT") {
       const patient = await getCurrentPatient()
@@ -50,9 +56,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "No active access to this patient's records" }, { status: 403 })
       }
       activeShareId = share.id
+      // RAG must respect the share's scope: a PARTIAL share (specific
+      // categories/documents) must not let the doctor retrieve values from
+      // unshared categories just by asking about them.
+      shareScope = {
+        scope: share.scope,
+        categories: share.categories,
+        documentIds: share.documentIds,
+      }
     }
 
-    const result = await askMyRecords(question, targetPatientId!, user.id, activeShareId)
+    const result = await askMyRecords(question, targetPatientId!, user.id, activeShareId, shareScope)
 
     return NextResponse.json(result)
   } catch (err) {

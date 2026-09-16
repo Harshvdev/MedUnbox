@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentPatient } from "@/lib/session"
 import { db } from "@/lib/db"
+import { generateAccessCode } from "@/lib/access-code"
+import { rateLimit, tooManyRequests } from "@/lib/rate-limit"
 import { SHARE_DURATIONS } from "@/lib/constants"
 import { ShareDuration, ShareScope } from "@prisma/client"
 
@@ -84,6 +86,11 @@ export async function POST(req: NextRequest) {
     if (!patient) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
+
+    // Cap share creation so a compromised session can't spray unlimited
+    // access grants (each one emails/links a doctor into the vault).
+    const limiter = rateLimit(`share:create:${patient.id}`, 20, 60 * 60 * 1000)
+    if (!limiter.ok) return tooManyRequests(limiter.retryAfter)
 
     const body = await req.json().catch(() => null)
     if (!body || typeof body !== "object") {
@@ -170,6 +177,8 @@ export async function POST(req: NextRequest) {
       data: {
         patientId: patient.id,
         doctorId: doctorUser.doctor.id,
+        // High-entropy capability token (schema default cuid() is guessable).
+        accessCode: generateAccessCode(),
         scope,
         duration,
         expiresAt,

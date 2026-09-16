@@ -21,34 +21,65 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { LanguageToggle } from "@/components/language-toggle"
+import { useLanguage } from "@/lib/i18n"
 
 export default function Home() {
   const { data: session, status } = useSession()
+  const { language, t } = useLanguage()
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header */}
       <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">MedUnbox</span>
+          <div className="flex items-center gap-6">
+            <Link href="/" className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <span className="text-xl font-bold tracking-tight">MedUnbox</span>
+            </Link>
+
+            <nav className="hidden md:flex items-center gap-5 text-sm font-medium">
+              <Link href="/" className="text-primary font-semibold">
+                {t("landing.home")}
+              </Link>
+              <Link href="/about" className="text-muted-foreground hover:text-foreground transition-colors">
+                {t("landing.about")}
+              </Link>
+              <Link href="/customer-care" className="text-muted-foreground hover:text-foreground transition-colors">
+                {t("landing.customerCare")}
+              </Link>
+            </nav>
           </div>
+
           <div className="flex items-center gap-2">
+            <LanguageToggle />
             <ThemeToggle />
             {status === "authenticated" ? (
-              <Button asChild>
-                <Link href="/dashboard">Go to Dashboard <ArrowRight className="ml-1 h-4 w-4" /></Link>
+              <Button asChild className="rounded-xl shadow-sm">
+                <Link
+                  href={
+                    session?.user?.role === "DOCTOR"
+                      ? "/doctor"
+                      : session?.user?.role === "PHARMACIST"
+                      ? "/pharmacist"
+                      : session?.user?.role === "LAB_TECHNICIAN"
+                      ? "/lab-technician"
+                      : "/dashboard"
+                  }
+                >
+                  {t("landing.goToDashboard")} <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
               </Button>
             ) : (
               <>
-                <Button variant="ghost" asChild>
-                  <Link href="/login">Sign in</Link>
+                <Button variant="ghost" asChild className="rounded-xl">
+                  <Link href="/login">{t("landing.signIn")}</Link>
                 </Button>
-                <Button asChild>
-                  <Link href="/register">Get started</Link>
+                <Button asChild className="rounded-xl shadow-sm">
+                  <Link href="/register">{t("landing.getStarted")}</Link>
                 </Button>
               </>
             )}
@@ -77,16 +108,23 @@ export default function Home() {
               transition={{ duration: 0.6, ease: "easeOut" }}
             >
               <Badge variant="secondary" className="mb-4 gap-1.5">
-                <Lock className="h-3 w-3" /> Patient-controlled • Evidence-first AI
+                <Lock className="h-3 w-3" /> {t("landing.heroBadge")}
               </Badge>
               <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
-                Your complete medical history,{" "}
-                <span className="text-primary">in one private vault</span>
+                {language === "hi" ? (
+                  <>
+                    आपका सम्पूर्ण मेडिकल इतिहास,{" "}
+                    <span className="text-primary">एक सुरक्षित वॉल्ट में</span>
+                  </>
+                ) : (
+                  <>
+                    Your complete medical history,{" "}
+                    <span className="text-primary">in one private vault</span>
+                  </>
+                )}
               </h1>
               <p className="mt-6 text-lg md:text-xl text-foreground/80">
-                Upload reports, prescriptions, and scans. MedUnbox extracts structured data,
-                builds a longitudinal timeline, detects trends and conflicts, and lets your
-                doctors ask questions grounded in your actual records.
+                {t("landing.heroDesc")}
               </p>
               <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row lg:justify-start">
                 <Button
@@ -95,7 +133,7 @@ export default function Home() {
                   className="w-full rounded-xl shadow-md shadow-primary/30 transition-all hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/40 sm:w-auto"
                 >
                   <Link href="/register">
-                    Create your medical vault <ArrowRight className="ml-2 h-4 w-4" />
+                    {t("landing.createVault")} <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
                 <Button
@@ -104,7 +142,7 @@ export default function Home() {
                   asChild
                   className="w-full rounded-xl border-border bg-background/60 backdrop-blur transition-all hover:-translate-y-0.5 hover:bg-accent sm:w-auto"
                 >
-                  <Link href="/login">I already have an account</Link>
+                  <Link href="/login">{t("landing.existingAccount")}</Link>
                 </Button>
               </div>
               {/* Trust pills */}
@@ -342,9 +380,24 @@ export default function Home() {
               </div>
               <span className="font-semibold">MedUnbox</span>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Patient-controlled longitudinal medical records · Evidence-first AI
-            </p>
+
+            <div className="flex flex-wrap items-center justify-center gap-5 text-xs text-muted-foreground">
+              <Link href="/" className="hover:text-foreground">
+                {t("landing.home")}
+              </Link>
+              <Link href="/about" className="hover:text-foreground">
+                {t("landing.about")}
+              </Link>
+              <Link href="/customer-care" className="hover:text-foreground">
+                {t("landing.customerCare")}
+              </Link>
+              <Link href="/settings" className="hover:text-foreground">
+                {t("nav.settings")}
+              </Link>
+              <Link href="/emergency" className="hover:text-foreground text-red-500 font-medium">
+                {t("nav.emergency")}
+              </Link>
+            </div>
           </div>
           <p className="mt-4 text-center text-xs text-muted-foreground">
             MedUnbox assists with organizing and understanding records. It does not replace

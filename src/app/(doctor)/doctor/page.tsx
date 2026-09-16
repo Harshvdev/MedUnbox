@@ -21,6 +21,8 @@ import {
 } from "@/lib/constants"
 import { EmptyState } from "@/components/empty-state"
 
+import { DoctorAadhaarPortal } from "@/components/doctor/doctor-aadhaar-portal"
+
 export default async function DoctorDashboardPage() {
   const user = await getCurrentUser()
   const doctor = await getCurrentDoctor()
@@ -141,6 +143,9 @@ export default async function DoctorDashboardPage() {
           )
         })}
       </div>
+
+      {/* Aadhaar Patient Lookup & Prescription Portal */}
+      <DoctorAadhaarPortal />
 
       {/* Active patients */}
       <Card>

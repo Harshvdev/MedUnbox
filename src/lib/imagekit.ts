@@ -50,13 +50,16 @@ export async function uploadDocumentToImageKit(
   height?: number
   size: number
 }> {
+  // The ImageKit SDK stringifies every option value, so an explicitly-undefined
+  // overwriteFile would be sent as "undefined" and rejected by the API. Only
+  // include overwriteFile when actually overwriting (seed's fixed file names).
   const result = await ik().upload({
     file: fileBuffer,
     fileName,
     folder: `/medunbox-documents/${folder}`,
     isPrivateFile: true,
     useUniqueFileName: opts.uniqueFileName ?? true,
-    overwriteFile: opts.uniqueFileName === false ? true : undefined,
+    ...(opts.uniqueFileName === false ? { overwriteFile: true } : {}),
     tags: ['medunbox', 'medical-record'],
     responseFields: ['isPrivateFile', 'tags', 'customCoordinates', 'height', 'width'],
   })
